@@ -1,16 +1,23 @@
 # cleans and edits shoals data output, formats into same format used by access
 # data entry templates so that shoals data can be imported into access
+# Also useful for getting shoals data into a format that can be merged/joined
+# onto big boy downloads, if shoals data from recent trip is not yet in big boy
+
 # Author: Jan Boyer, AGFD jboyer@azgfd.gov
 # inputs: .txt file (tab delimited) of fish data output from shoals program
 #         using Files -> Export Data in shoals
 # outputs: 2 .csv files:
-#   one with site(sample) data: import to FISH_T_SAMPLE table in access
-#   one with fish(specimen) data: import to FISH_T_SPECIMEN table in access
+#   one with site(sample) data: to import to FISH_T_SAMPLE table in access data
+#                               entry template
+#   one with fish(specimen) data: to import to FISH_T_SPECIMEN table in access
+#                                 data entry template
 
 # Note:Originally written for AGFD data, may need minor edits (i.e., add columns
-# that your project uses but AGFD projects don't)
+# that your project uses but AGFD projects don't, some projects record PIT and
+# finclip in RECAP_YES_NO, others only record PIT recap info) to work for other
+# agencies or projects
 
-require(tidyverse)
+library(tidyverse)
 
 # update these field to match your data #######
 #trip id
@@ -24,10 +31,10 @@ shoals.file.name <- "GC20191024_AGFD_HP_v6_Export.txt"
 save.filepath <- "\\\\FLAG-SERVER/Office/Grand Canyon Downstream/Databases/2019/"
 
 # read shoals data #####
-#Important to use base R read functions - tidyverse functions will read data
+#Important to use base R read functions - tidyverse read functions will read data
 #incorrectly if data is only recorded in a few rows
 d <- read.delim(paste0(shoals.data.filepath, shoals.file.name),
-                stringsAsFactors = FALSE)
+                stringsAsFactors = FALSE) #import text as character, not factor
 
 #id column importing with strange symbols - rename to fix
 d <- d %>%
@@ -71,7 +78,7 @@ glimpse(d)
 #depending on your preference, any errors found can be fixed
 #  a) in the shoals program using the edit tab
 #  b) in a copy of the data export file from shoals
-#  c) in R, with either ifelse() or mutate() and case_when() code
+#  c) in R, with either ifelse() or mutate(case_when()) code
 
 #CHECK site notes and sample notes for any notes on data entry errors
 #and fix in SHOALS!
@@ -108,7 +115,7 @@ d <- d %>%
 max(d$ACCESS_FISH_ID)
 max(d$ACCESS_SAMPLE_ID)
 
-#Calculate TOTAL CATCH
+#Calculate TOTAL CATCH for each site or hoop net
 catch <- d %>%
   mutate(SPECIES = as.factor(SPECIES)) %>%
   group_by(S_SITE_ID, SPECIES) %>%
@@ -122,7 +129,6 @@ catch <- d %>%
 d <- merge(d, catch, by = "S_SITE_ID", all.x = TRUE)
 
 # rename columns to access column names and split into two dataframes #####
-
 #sample (site) data
 #this can be imported to the FISH_T_SAMPLE table in access
 site <- d %>%
@@ -207,7 +213,7 @@ write.csv(fish,
 #        (GC20191024_sample_for_access.csv or similar), and choose "Append a
 #        copy of the records to the table: FISH_T_SAMPLE"
 #    2d. choose delimited on the second screen
-#    2c. choose comma when asked what delimiter separates your data, and check
+#    2e. choose comma when asked what delimiter separates your data, and check
 #        the "First Row Contains Field Names" box
 # 3. Repeat step 2 with specimen data, appending your specimen file to the
 #    FISH_T_SPECIMEN table
