@@ -217,3 +217,4 @@ write.csv(fish,
 #        the "First Row Contains Field Names" box
 # 3. Repeat step 2 with specimen data, appending your specimen file to the
 #    FISH_T_SPECIMEN table
+
