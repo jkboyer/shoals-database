@@ -154,7 +154,7 @@ species.counts <- d %>%
 #this was recorded as GSF but is definitely a trout (PIT tagged and ADP clip)
 #and fork length seems more likely to be RBT than BNT
 d <- d %>%
-  mutate(SPECIES == case_when(ID == "ID_20200717_2048_38_415_3e6c66c5" ~ "RBT",
+  mutate(SPECIES = case_when(SPECIES == "GSF" & FINCLIP1 == "ADP" ~ "RBT",
                               TRUE ~ SPECIES))
 
 
@@ -228,9 +228,107 @@ d <- d %>%
   select(-total_minus_fork) #no longer needed
 
 
-#format to match access files
+#format to match access files ###########
+#assign numeric primary keys
+#shoals uses strings of numbers and letters, access uses numeric primary keys
+d <- d %>%
+  arrange(SAMPLE_ID, S_START_DATE_TIME) %>% #order by sample id and end time
+  #create numeric ids by converting existing id fields to numeric
+  mutate(ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
+         ACCESS_FISH_ID = row_number())
+
+#look at your sample size - makes sense?
+max(d$ACCESS_FISH_ID)
+max(d$ACCESS_SAMPLE_ID)
+
+#Calculate TOTAL CATCH for each site or hoop net
+catch <- d %>%
+  mutate(SPECIES = as.factor(SPECIES)) %>%
+  group_by(S_SITE_ID, SPECIES) %>%
+  summarize(catch = n()) %>%
+  mutate(catch = case_when(SPECIES == "NFC" ~ 0,
+                           TRUE ~ as.numeric(catch)))  %>%
+  group_by(S_SITE_ID) %>%
+  summarize(TOTAL_CATCH = sum(catch))
+
+#add total catch to data
+d <- merge(d, catch, by = "S_SITE_ID", all.x = TRUE)
+
+# rename columns to access column names and split into two dataframes #####
+#sample (site) data
+#this can be imported to the FISH_T_SAMPLE table in access
+colnames(d)
+
+#add end date
+d <- d %>%
+  mutate(END_DATETIME = S_START_DATE_TIME + EF_TOTAL_SECONDS)
+
+site <- d %>%
+  transmute(ACCESS_SAMPLE_ID = ACCESS_SAMPLE_ID,
+            DATASHEET_SAMPLE_ID = S_SITE_ID,
+            TRIP_ID = S_TRIP_ID,
+            SAMPLE_TYPE = S_SAMPLE_TYPE,
+            #dates and times are extracted from datetime
+            START_DATE = substr(as.character(S_START_DATE_TIME), 1, 10),
+            START_TIME = substr(as.character(S_START_DATE_TIME), 12, 16),
+            END_DATE = substr(as.character(END_DATETIME), 1, 10),
+            END_TIME = substr(as.character(END_DATETIME), 12, 16),
+            START_DATETIME = S_START_DATE_TIME,
+            END_DATETIME = END_DATETIME,
+            RIVER_CODE = "COR",
+            SIDE_CODE = S_SIDE,
+            START_RM = S_RM_START,
+            END_RM = S_RM_END,
+            STATION_ID = paste0("S", S_SITE_ID),
+            GPS_START = S_SITE_ID,
+            CREW = S_CREW,
+            CLIPBOARD = S_CLIPBOARD,
+            GEAR_CODE = "EL",
+            TOTAL_CATCH = TOTAL_CATCH,
+            EF_AMPS = S_EF_AMPS,
+            EF_VOLTS = S_EF_VOLTS,
+            EF_TOTAL_SECONDS = EF_TOTAL_SECONDS,
+            HABITAT_CODE = S_HABITAT,
+            HYDRAULIC_CODE = S_HYDRAULIC,
+            SUBSTRATE_CODE = S_SUBSTRATE,
+            COVER_CODE = S_COVER,
+            TURBIDITY = "L",
+            SAMPLE_NOTES = S_SAMPLE_NOTES) %>%
+  distinct() #keep only unique rows
+
+# Make dates the frustrating, nonstandard microsoft format
+# why don't you use ISO 8601 date standards, Microsoft?!
+site <- site %>%
+  mutate(START_DATE = as.character(format(as.Date(START_DATE), "%m/%d/%Y")),
+         END_DATE = as.character(format(as.Date(END_DATE), "%m/%d/%Y")))
+
+fish <- d %>%
+  transmute(ACCESS_FISH_ID = ACCESS_FISH_ID,
+            ACCESS_SAMPLE_ID = ACCESS_SAMPLE_ID,
+            SPECIES_CODE = SPECIES,
+            TOTAL_LENGTH = TOTAL_LENGTH,
+            FORK_LENGTH = FORK_LENGTH,
+            WEIGHT = WEIGHT,
+            SEX_CODE = SEX,
+            SEX_COND_CODE = SEX_COND,
+            SEX_CHAR_CODE = SEX_CHAR,
+            #shoals records PIT and finclip recap info in one field
+            #access has separate fields for each
+            FINCLIP1_RECAP = case_when(RECAP_YES_NO %in% c("BY", "FY") ~ "Y",
+                                       RECAP_YES_NO %in% c("BN", "PY") ~ "N"),
+            FINCLIP1 = FINCLIP1,
+            PITTAG_RECAP = case_when(RECAP_YES_NO %in% c("BY", "PY") ~ "Y",
+                                     RECAP_YES_NO %in% c("BN", "FY") ~ "N"),
+            PITTAG = FISH_TAG,
+            DISPOSITION_CODE = DISPOSITION,
+            SPECIMEN_NOTES = SPECIMEN_NOTES)
+
+#check that column names match those in big boy database
+colnames(site)
+colnames(fish)
 
 
 #save to ~/data/raw
-write.csv(f, "./data/raw/fish_shoals.csv", row.names = FALSE)
-write.csv(s, "./data/raw/site_shoals.csv", row.names = FALSE)
+write.csv(fish, "./output_data/LF20200715_fish.csv", row.names = FALSE)
+write.csv(site, "./output_data/LF20200715_site.csv", row.names = FALSE)
+write.csv(d, "./output_data/LF20200715_shoals_export_errorchecked.csv", row.names = FALSE)
