@@ -13,22 +13,30 @@
 
 library(tidyverse)
 site.list <- read.csv("./site_lists/LF_sites.csv", stringsAsFactors = FALSE)
+site.list <- site.list %>%
+  filter(type == "monitoring") %>%
+  select(S_SITE_ID, side, rm_start, rm_end) %>%
+  distinct()
 
 current.year <- 2020 #define current year
-trip.id <- "LF20200715"
+trip.id <- "LF20200921"
 
 #current.year.directory <- paste(
 #  "\\\\flag-server/Office/Lees Ferry/Database files",
 #  current.year, sep = "/")
 
 #working at home because COVID, no server access
-current.year.directory <- "C:/Users/jboyer/Documents/data"
+current.year.directory <- "./input_data/"
 
-file.name <- "LF20200715_shoals_export_edited.tsv"
+file.name <- "LF20200921_AGFD_EF_v6_Export.txt"
 
 d <- read.delim(paste(current.year.directory, file.name, sep = "/"),
                 header = TRUE, stringsAsFactors = FALSE) #load shoals data
 colnames(d)
+
+#id column importing with strange symbols - rename to fix
+d <- d %>%
+  rename(ID = `ï..ID`)
 
 #select and order only needed columns
 d <- d %>%
@@ -58,7 +66,7 @@ d <- d  %>%
   ##mutate_at(vars(ends_with("DATE_TIME")), #mutate all variables ending with...
   #          as.POSIXct, #with this function
    #         format = "%m/%d/%Y %H:%M") %>% #arguments needed for function
-  mutate(S_START_DATE_TIME = as.POSIXct(S_START_DATE_TIME)) %>%
+  mutate(S_START_DATE_TIME = as.POSIXct(S_START_DATE_TIME, format = "%m/%d/%Y %H:%M")) %>%
   mutate_at(vars(ends_with("READER_TIME")),
             as.POSIXct,
             format = "%m/%d/%Y %H:%M:%S") %>%
@@ -67,24 +75,29 @@ d <- d  %>%
 #check that each column is correct data class
 glimpse(d)
 
+length(unique(d$S_SITE_ID))
+
 #fix errors with site ID
 d <- d %>%
-  mutate(S_SITE_ID = case_when(S_SITE_ID == "-13.95" ~"-13.95R",
-                               S_SITE_ID == "-9.17L" ~"-9.17R",
-                               S_SITE_ID == "-7.63L" ~"-7.63R",
-                               S_SITE_ID == "--7.19L" ~ "-7.19R",
-                               TRUE ~ S_SITE_ID))
+ mutate(S_SITE_ID = case_when(S_SITE_ID == "-4.31L" ~ "-4.31R",
+                              TRUE ~ S_SITE_ID))
+
+
+sites.sampled = d %>%
+  select(S_SITE_ID, S_START_DATE_TIME)%>%
+  unique()
+
+length(unique(d$S_SITE_ID))
+length(unique(d$SAMPLE_ID))
 
 d <- d %>%
   mutate(S_SIDE = case_when(S_SIDE == "L(LEFT)" ~ "L", TRUE ~ S_SIDE))
 
-#add start, end RM and side info (by joining with site id)
-site.list <- site.list %>%
-  select(S_SITE_ID, rm_start, rm_end, side)
-
 #join site info to shoals data
+#use base, because tidyverse was erraneously adding rows
 d <- d %>%
   left_join(site.list)
+
 
 #assign start/end RM and side
 d <- d %>%
@@ -102,8 +115,8 @@ d <- d %>%
       !is.na(rm_end) ~ rm_end,
       is.na(S_RM_END) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
     S_SIDE = case_when( #do the same for end RM
-      !is.na(S_SIDE) ~ S_SIDE,
-      !is.na(side) ~ side,
+      !is.na(S_SIDE) & S_SIDE != "" ~ S_SIDE,
+      !is.na(side) & side != "" ~ side,
       is.na(S_SIDE) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ "L")) %>%
   select(-c(rm_start, rm_end, side)) #no longer needed, remove
 
@@ -112,12 +125,6 @@ d <- d %>%
 #on this graph, samples should progress downstream and onward in time in a
 #logical manner. If any sample sites are by themselves, check for errors
 
-#check for volts/amps errors and fix
-d <- d %>%
-  mutate(S_EF_VOLTS = case_when(S_EF_VOLTS == 17.4 ~ 420, TRUE ~ S_EF_VOLTS),
-         S_EF_AMPS = case_when(S_EF_AMPS == 420 ~17.4,
-                               S_EF_AMPS == 167.0 ~ 16.7,
-                               TRUE ~ S_EF_AMPS))
 
 #check that sites proceed downstream over time in logical manner
 #this will reveal datetime and river mile errors
@@ -126,10 +133,14 @@ d %>%
   geom_point()
 
 
-# COMBINE EF MINTUES AND SECONDS FOR TOTAL SECONDS
+# COMBINE EF MINUTES AND SECONDS FOR TOTAL SECONDS
 d <- d %>%
   mutate(EF_TOTAL_SECONDS = S_EF_MINUTES*60 + S_EF_SECONDS) %>%
   select(-c(S_EF_SECONDS, S_EF_MINUTES)) #no longer needed
+
+#crew - standardize format: boatmen first, commas in between
+unique(d$S_CREW)
+
 
 #format and fix fish data #################
 
@@ -210,23 +221,22 @@ d <- d %>%
 
 
 #Fix fish errors ############
-d <- d %>%
-  mutate(FORK_LENGTH = as.numeric(FORK_LENGTH),
-         TOTAL_LENGTH = as.numeric(TOTAL_LENGTH),
-         WEIGHT = as.numeric(WEIGHT)) %>%
-  mutate(TOTAL_LENGTH = case_when(
-    ID == "ID_20200717_0113_30_194_a337bd7a" ~ 334,
-    TRUE ~ TOTAL_LENGTH),
-    FORK_LENGTH = case_when(
-    ID == "	ID_20200715_2142_19_565_1b885a65" ~ 587,
-    ID == "ID_20200715_2142_19_565_1b885a65" ~ 277,
-    TRUE ~ FORK_LENGTH),
-         WEIGHT = case_when(
-           ID == "ID_20200718_2052_13_810_33314fea" ~ as.numeric(NA),
-           ID == "ID_20200715_2108_55_311_13ce0ee8" ~ as.numeric(NA),
-           TRUE ~ WEIGHT)) %>%
-  select(-total_minus_fork) #no longer needed
 
+#CHECK for duplicate tag entries (i.e., new fish measured before previous fish
+#was saved
+#Not all duplicates are errors, fish may have been captured 2x - check datetimes
+dup.tags <- d %>%
+  filter(is.na(FISH_TAG) == FALSE & FISH_TAG != "" &
+           duplicated(FISH_TAG))
+
+
+#fix errors in sex and condition
+d <- d %>%
+  #cannot have ripe fish of unknown sex - ripe must be error
+  mutate(SEX_COND = case_when(SEX == "U" & SEX_COND == "R" ~ "N",
+  #also G (gravid?) occasionally recorded for unknown fish?!
+                              SEX == "U" & SEX_COND == "G" ~ "N",
+                              TRUE ~ SEX_COND))
 
 #format to match access files ###########
 #assign numeric primary keys
@@ -280,7 +290,7 @@ site <- d %>%
             START_RM = S_RM_START,
             END_RM = S_RM_END,
             STATION_ID = paste0("S", S_SITE_ID),
-            GPS_START = S_SITE_ID,
+            GPS_START_WAYPOINT = S_SITE_ID,
             CREW = S_CREW,
             CLIPBOARD = S_CLIPBOARD,
             GEAR_CODE = "EL",
@@ -294,12 +304,20 @@ site <- d %>%
             COVER_CODE = S_COVER,
             TURBIDITY = "L",
             SAMPLE_NOTES = S_SAMPLE_NOTES) %>%
-  distinct() #keep only unique rows
+  distinct() %>% #keep only unique rows
+  #in character fields, replace NAs with "" so access does not read as "NA"
+  #ok to keep NAs in numeric fields, access interprets correctly for numeric
+  replace_na(list(SAMPLE_NOTES = ""))
+
 
 # Make dates the frustrating, nonstandard microsoft format
 # why don't you use ISO 8601 date standards, Microsoft?!
 site <- site %>%
-  mutate(START_DATE = as.character(format(as.Date(START_DATE), "%m/%d/%Y")),
+  mutate(START_DATETIME = as.character(format(as.POSIXct(START_DATETIME),
+                                          "%m/%d/%Y %H:%M:%S")),
+         END_DATETIME = as.character(format(as.POSIXct(END_DATETIME),
+                                              "%m/%d/%Y %H:%M:%S")),
+         START_DATE = as.character(format(as.Date(START_DATE), "%m/%d/%Y")),
          END_DATE = as.character(format(as.Date(END_DATE), "%m/%d/%Y")))
 
 fish <- d %>%
@@ -321,14 +339,27 @@ fish <- d %>%
                                      RECAP_YES_NO %in% c("BN", "FY") ~ "N"),
             PITTAG = FISH_TAG,
             DISPOSITION_CODE = DISPOSITION,
-            SPECIMEN_NOTES = SPECIMEN_NOTES)
+            SPECIMEN_NOTES = SPECIMEN_NOTES) %>%
+  #in character fields, replace NAs with "" so access does not read as "NA"
+  #ok to keep NAs in numeric fields, access interprets correctly for numeric
+  replace_na(list(SEX_CODE = "",
+                  SEX_COND_CODE = "",
+                  SEX_CHAR_CODE = "",
+                  FINCLIP1_RECAP = "",
+                  FINCLIP1  = "",
+                  PITTAG_RECAP = "",
+                  PITTAG = "",
+                  DISPOSITION_CODE = "",
+                  SPECIMEN_NOTES = ""))
 
 #check that column names match those in big boy database
 colnames(site)
 colnames(fish)
 
 
+
 #save to ~/data/raw
-write.csv(fish, "./output_data/LF20200715_fish.csv", row.names = FALSE)
-write.csv(site, "./output_data/LF20200715_site.csv", row.names = FALSE)
-write.csv(d, "./output_data/LF20200715_shoals_export_errorchecked.csv", row.names = FALSE)
+write.csv(fish, "./output_data/LF20200921_fish.csv", row.names = FALSE)
+write.csv(site, "./output_data/LF20200921_site.csv", row.names = FALSE)
+write.csv(d, "./output_data/LF20200921_shoals_export_errorchecked.csv", row.names = FALSE)
+
