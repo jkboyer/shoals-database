@@ -167,6 +167,31 @@ d <- d %>%
 d <- d %>%
   left_join(all.sites)
 
+#check that regular and supplemental codes are correct
+sample.type <- d %>%
+ select(S_CLIPBOARD, S_SAMPLE_TYPE, S_SITE_ID, S_START_DATE_TIME, SAMPLE_ID, S_SAMPLE_NOTES) %>%
+  unique() %>%
+  arrange(S_CLIPBOARD, S_START_DATE_TIME)
+
+#day 1 boat B net 4 had comment + sample type carried over from previosu net
+#coded as 115 but should be 99, throat was still in water
+d <- d %>%
+  mutate(S_SAMPLE_TYPE = case_when(SAMPLE_ID == "1026_0930_42238.19R" ~ as.integer(99),
+                                   TRUE ~ S_SAMPLE_TYPE),
+         S_SAMPLE_NOTES = case_when(SAMPLE_ID == "1026_0930_42238.19R" ~ "",
+                                    TRUE ~ S_SAMPLE_NOTES))
+
+#fix confusing sample notes
+d <- d %>%
+  mutate(S_SAMPLE_NOTES = case_when(
+    S_SAMPLE_NOTES == "Mouth of hoopnet out of water but still submerged2" ~
+      "Mouth of hoopnet out of water but still submerged",
+    S_SAMPLE_NOTES == "Float is out of the water, net partially submerged" ~
+      "Throat is out of the water, net partially submerged",
+    S_SAMPLE_NOTES == "Float is out of the water"~
+      "Throat is out of the water",
+    TRUE ~ S_SAMPLE_NOTES))
+
 #hoop net start and ends look accurate?
 #no negative time or multi-day sets?
 d <- d %>%
@@ -257,7 +282,6 @@ d %>%
   geom_text(aes(label = total_minus_fork, alpha = error)) +
   scale_alpha_manual(values = c(1, 0))
 
-
 d %>%
   mutate(error = case_when(abs(total_minus_fork) >= 40 ~ "error",
                            TRUE ~ "ok")) %>%
@@ -267,7 +291,6 @@ d %>%
   scale_alpha_manual(values = c(1, 0))
 
 #fix weight and length errors
-
 d <- d %>%
   #have to use NA_real_ instead of NA so dplyr interprets as numeric
   #This is a frustrating tidyverse thing that is worse than base R
@@ -311,12 +334,14 @@ site <- d %>%
   distinct() #keep only unique rows
 
 #add turbidity and temperature data
-turbidity <- read.csv("./input_data/GC20200621_turbidity_temperature.csv",
+turbidity <- read.csv("./input_data/GC20201025_turbidity_temperature.csv",
                       stringsAsFactors = FALSE)
 turbidity <- turbidity %>%
   transmute(START_DATE = date,
             WATER_TEMP = temperature,
             TURBIDITY_NTU = TurbidityNTU)
+glimpse(turbidity)
+glimpse(site)
 
 site <- site %>%
   left_join(turbidity)
