@@ -200,6 +200,12 @@ d <- d %>%
                                      366*24*60*60, #2020 was leap year
     TRUE ~ S_START_DATE_TIME))
 
+d <- d %>%
+  mutate(EFFORT_HOURS = as.numeric(difftime(S_END_DATE_TIME, S_START_DATE_TIME,
+                                            units = "hours")))
+
+summary(d$EFFORT_HOURS[d$S_GEAR %in% c("MHB", "HB")])
+
 #check for date/datetime or river mile errors
 #on this graph, samples should progress downstream and onward in time in a
 #logical manner. If any sample sites are by themselves, check for errors
@@ -213,18 +219,6 @@ d %>%
 d <- d %>%
   mutate(S_SIDE = str_extract(S_SITE_ID, "[A-Z]+" ))
 unique(d$S_SIDE) #check that this is only L and R
-
-#assign numeric primary keys
-#shoals uses strings of numbers and letters, access uses numeric primary keys
-d <- d %>%
-  arrange(SAMPLE_ID, S_END_DATE_TIME) %>% #order by sample id and end time
-  #create numeric ids by converting existing id fields to numeric
-  mutate(ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
-         ACCESS_FISH_ID = row_number())
-
-#look at your sample size
-max(d$ACCESS_FISH_ID)
-max(d$ACCESS_SAMPLE_ID)
 
 #Calculate TOTAL CATCH for each site or hoop net
 catch <- d %>%
@@ -305,7 +299,25 @@ d %>%
   geom_text(aes(label = total_minus_fork, alpha = error)) +
   scale_alpha_manual(values = c(1, 0))
 
+#assign numeric primary keys
+#shoals uses strings of numbers and letters, access uses numeric primary keys
+d <- d %>% #order data
+  mutate(START_DATE = substr(as.character(S_START_DATE_TIME), 1, 10)) %>%
+  arrange(START_DATE, S_CLIPBOARD, S_END_DATE_TIME) %>%
+  #create numeric ids by converting existing id fields to numeric
+  mutate(ACCESS_SAMPLE_ID = as.numeric(
+    #making access_sample_id from these fields keeps order logical
+    factor(paste(START_DATE, S_CLIPBOARD, S_END_DATE_TIME))),
+    #simply converting shoals IDs makes order super confusing
+    #ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
+         ACCESS_FISH_ID = row_number()) %>%
+  #add n samples already in access db (efish + angling) so IDs are unique
+  mutate(ACCESS_SAMPLE_ID = ACCESS_SAMPLE_ID + 267,
+         ACCESS_FISH_ID = ACCESS_FISH_ID + 2686)
 
+#look at your sample size
+max(d$ACCESS_FISH_ID)
+max(d$ACCESS_SAMPLE_ID)
 
 # rename columns to access column names and split into two dataframes #####
 #sample (site) data
@@ -325,6 +337,7 @@ site <- d %>%
                                  S_GEAR == "EL" ~ ""),
             START_DATETIME = S_START_DATE_TIME,
             END_DATETIME = S_END_DATE_TIME,
+            TOTAL_HOURS = round(EFFORT_HOURS, 2),
             RIVER_CODE = "COR",
             SIDE_CODE = S_SIDE,
             START_RM = S_RIVER_MILE,
