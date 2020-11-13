@@ -19,7 +19,7 @@ site.list <- site.list %>%
   distinct()
 
 current.year <- 2020 #define current year
-trip.id <- "LF20200921"
+trip.id <- "LF202000310"
 
 #current.year.directory <- paste(
 #  "\\\\flag-server/Office/Lees Ferry/Database files",
@@ -28,7 +28,7 @@ trip.id <- "LF20200921"
 #working at home because COVID, no server access
 current.year.directory <- "./input_data/"
 
-file.name <- "LF20200921_AGFD_EF_v6_Export.txt"
+file.name <- "LF20200310_shoals_export.txt"
 
 d <- read.delim(paste(current.year.directory, file.name, sep = "/"),
                 header = TRUE, stringsAsFactors = FALSE) #load shoals data
@@ -79,7 +79,8 @@ length(unique(d$S_SITE_ID))
 
 #fix errors with site ID
 d <- d %>%
- mutate(S_SITE_ID = case_when(S_SITE_ID == "-4.31L" ~ "-4.31R",
+ mutate(S_SITE_ID = case_when(S_SITE_ID == "-5.05 R" ~ "-5.05R",
+                              S_SITE_ID == "-4.61" ~ "-4.61R",
                               TRUE ~ S_SITE_ID))
 
 
@@ -100,25 +101,25 @@ d <- d %>%
 
 
 #assign start/end RM and side
-d <- d %>%
-  mutate(S_RM_START = case_when(
-    #If start RM entered (nonnative sites), keep existing value
+#d <- d %>%
+ # mutate(S_RM_START = case_when(
+ #   #If start RM entered (nonnative sites), keep existing value
     !is.na(S_RM_START) ~ S_RM_START,
     #For monitoring sites, start RM from joined site table
-    !is.na(rm_start) ~ rm_start,
+  #  !is.na(rm_start) ~ rm_start,
     #RM often not recorded for slough. If missing for slough sites, add RM
     #useful to have RM for mapping locations of nonnatives, do not want
     # to leave blank(this RM is a center point of slough)
-    is.na(S_RM_START) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
-    S_RM_END = case_when( #do the same for end RM
-      !is.na(S_RM_END) ~ S_RM_END,
-      !is.na(rm_end) ~ rm_end,
-      is.na(S_RM_END) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
-    S_SIDE = case_when( #do the same for end RM
-      !is.na(S_SIDE) & S_SIDE != "" ~ S_SIDE,
-      !is.na(side) & side != "" ~ side,
-      is.na(S_SIDE) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ "L")) %>%
-  select(-c(rm_start, rm_end, side)) #no longer needed, remove
+   # is.na(S_RM_START) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
+  #  S_RM_END = case_when( #do the same for end RM
+    #  !is.na(S_RM_END) ~ S_RM_END,
+   #   !is.na(rm_end) ~ rm_end,
+    #  is.na(S_RM_END) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
+   # S_SIDE = case_when( #do the same for end RM
+    #  !is.na(S_SIDE) & S_SIDE != "" ~ S_SIDE,
+    #  !is.na(side) & side != "" ~ side,
+    #  is.na(S_SIDE) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ "L")) %>%
+  #select(-c(rm_start, rm_end, side)) #no longer needed, remove
 
 
 #check for date/datetime or river mile errors
@@ -131,6 +132,12 @@ d <- d %>%
 d %>%
   ggplot(aes(x = S_START_DATE_TIME, y = S_RM_START)) +
   geom_point()
+
+d <- d %>% #fix one time error
+  mutate(S_START_DATE_TIME = case_when(
+    S_START_DATE_TIME == as.POSIXct("2020-03-10 11:32:00") ~
+                     as.POSIXct("2020-03-10 22:00:00"),
+                   TRUE ~ S_START_DATE_TIME))
 
 
 # COMBINE EF MINUTES AND SECONDS FOR TOTAL SECONDS
@@ -161,12 +168,7 @@ species.counts <- d %>%
 #look especially for unusual fish (GSF, FHM) caught at montioring sites (96)
 #these could be real, but likely are computer errors
 
-#fix errors
-#this was recorded as GSF but is definitely a trout (PIT tagged and ADP clip)
-#and fork length seems more likely to be RBT than BNT
-d <- d %>%
-  mutate(SPECIES = case_when(SPECIES == "GSF" & FINCLIP1 == "ADP" ~ "RBT",
-                              TRUE ~ SPECIES))
+#fix errors if needed
 
 
 #check weights and lengths
@@ -221,6 +223,16 @@ d <- d %>%
 
 
 #Fix fish errors ############
+d <- d %>%
+  mutate(TOTAL_LENGTH = case_when(ID == "ID_20200312_2132_58_596_bb992dd2" ~ as.integer(423),
+                                  ID == "ID_20200310_2206_22_081_87b62916" ~ as.integer(114),
+                                  TRUE ~ TOTAL_LENGTH),
+
+         WEIGHT = case_when(ID == "ID_20200310_2216_45_048_9b94578c" ~ NA_integer_,
+                            ID == "ID_20200310_2221_08_713_8a637530" ~ as.integer(38),
+                            TRUE ~ WEIGHT))
+
+
 
 #CHECK for duplicate tag entries (i.e., new fish measured before previous fish
 #was saved
@@ -359,7 +371,7 @@ colnames(fish)
 
 
 #save to ~/data/raw
-write.csv(fish, "./output_data/LF20200921_fish.csv", row.names = FALSE)
-write.csv(site, "./output_data/LF20200921_site.csv", row.names = FALSE)
-write.csv(d, "./output_data/LF20200921_shoals_export_errorchecked.csv", row.names = FALSE)
+write.csv(fish, "./output_data/LF20200310_fish.csv", row.names = FALSE)
+write.csv(site, "./output_data/LF202000310_site.csv", row.names = FALSE)
+write.csv(d, "./output_data/LF202000310_shoals_export_errorchecked.csv", row.names = FALSE)
 
