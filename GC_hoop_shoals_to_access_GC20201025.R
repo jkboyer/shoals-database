@@ -216,11 +216,21 @@ unique(d$S_SIDE) #check that this is only L and R
 
 #assign numeric primary keys
 #shoals uses strings of numbers and letters, access uses numeric primary keys
-d <- d %>%
-  arrange(SAMPLE_ID, S_END_DATE_TIME) %>% #order by sample id and end time
+d <- d %>% #order data
+  mutate(START_DATE = substr(as.character(S_START_DATE_TIME), 1, 10)) %>%
+  arrange(START_DATE, S_CLIPBOARD, S_END_DATE_TIME) %>%
   #create numeric ids by converting existing id fields to numeric
-  mutate(ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
-         ACCESS_FISH_ID = row_number())
+  mutate(ACCESS_SAMPLE_ID = as.numeric(
+    #making access_sample_id from these fields keeps order logical
+    #(arranged in order sites were sampled for each boat)
+    factor(paste(START_DATE, S_CLIPBOARD, S_END_DATE_TIME))),
+    #shoals IDs are totally random so simply converting shoals IDs to access IDs
+    #would makes order random and super confusing
+    #ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
+    ACCESS_FISH_ID = row_number()) %>%
+  #add n samples/specimens already in access db (efish + angling) so IDs are unique
+  mutate(ACCESS_SAMPLE_ID = ACCESS_SAMPLE_ID + 126,
+         ACCESS_FISH_ID = ACCESS_FISH_ID + 895)
 
 #look at your sample size
 max(d$ACCESS_FISH_ID)
@@ -258,9 +268,15 @@ d <- d %>%
     ID == "ID_20201026_1301_00_676_b574e4d2" ~ "FMS",
     #recorded as CRP, actually FMS based on no dorsal clip and TL/FL/WT ratio
     ID == "ID_20201027_1026_47_051_6d46085e" ~ "FMS",
-    #recorded as SMB, actually FMS based of RA and TL/FL ratio
+    #recorded as SMB, actually FMS (RA, TL/FL ratio) also Dave said no SMB caught
     ID == "ID_20201026_1223_24_571_9fc95052" ~ "FMS",
                              TRUE ~ SPECIES))
+
+#check species counts again - correct now?
+species.counts <- d %>%
+  group_by(SPECIES) %>%
+  summarise(n = n()) %>%
+  arrange(-n)
 
 #check lengths and weights
 d <- d %>%
@@ -318,6 +334,7 @@ site <- d %>%
                                  S_GEAR == "EL" ~ ""),
             START_DATETIME = S_START_DATE_TIME,
             END_DATETIME = S_END_DATE_TIME,
+            TOTAL_HOURS = round(EFFORT_HOURS, 2),
             RIVER_CODE = "COR",
             SIDE_CODE = S_SIDE,
             START_RM = S_RIVER_MILE,

@@ -101,10 +101,13 @@ d <- d %>%
 
 
 #assign start/end RM and side
-#d <- d %>%
- # mutate(S_RM_START = case_when(
+d <- d %>%
+  mutate(S_RM_START = rm_start,
+         S_RM_END = rm_end)
+
+#  mutate(S_RM_START = case_when(
  #   #If start RM entered (nonnative sites), keep existing value
-    !is.na(S_RM_START) ~ S_RM_START,
+#    !is.na(S_RM_START) ~ S_RM_START,
     #For monitoring sites, start RM from joined site table
   #  !is.na(rm_start) ~ rm_start,
     #RM often not recorded for slough. If missing for slough sites, add RM
