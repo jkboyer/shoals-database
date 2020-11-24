@@ -278,6 +278,14 @@ species.counts <- d %>%
   summarise(n = n()) %>%
   arrange(-n)
 
+#TO ADD, for each species, check against reasonable lengths, weights, tag
+#       and fin clip, for that species to catch species errors.
+#       i.e., FHM should not be >70mm TL, and should not have a tag
+#
+#      maybe test all this stuff, and add a SPECIES_CORRECT column that will have
+#      true or false depending on if the entry makes sense for that species
+
+
 #check lengths and weights
 d <- d %>%
   mutate(total_minus_fork = TOTAL_LENGTH - FORK_LENGTH)
