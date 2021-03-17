@@ -18,8 +18,8 @@ site.list <- site.list %>%
   select(S_SITE_ID, side, rm_start, rm_end) %>%
   distinct()
 
-current.year <- 2020 #define current year
-trip.id <- "LF202000310"
+current.year <- 2021 #define current year
+trip.id <- "LF202100308"
 
 #current.year.directory <- paste(
 #  "\\\\flag-server/Office/Lees Ferry/Database files",
@@ -28,7 +28,7 @@ trip.id <- "LF202000310"
 #working at home because COVID, no server access
 current.year.directory <- "./input_data/"
 
-file.name <- "LF20200310_shoals_export.txt"
+file.name <- "LF20210308_AGFD_EF_v6_Export.txt"
 
 d <- read.delim(paste(current.year.directory, file.name, sep = "/"),
                 header = TRUE, stringsAsFactors = FALSE) #load shoals data
@@ -76,11 +76,11 @@ d <- d  %>%
 glimpse(d)
 
 length(unique(d$S_SITE_ID))
-
+unique(d$S_SITE_ID)
 #fix errors with site ID
 d <- d %>%
- mutate(S_SITE_ID = case_when(S_SITE_ID == "-5.05 R" ~ "-5.05R",
-                              S_SITE_ID == "-4.61" ~ "-4.61R",
+ mutate(S_SITE_ID = case_when(S_SITE_ID == "--12.55L" ~ "-12.55L",
+                              S_SITE_ID == "-12.05" ~ "-12.05L",
                               TRUE ~ S_SITE_ID))
 
 
@@ -90,9 +90,8 @@ sites.sampled = d %>%
 
 length(unique(d$S_SITE_ID))
 length(unique(d$SAMPLE_ID))
-
-d <- d %>%
-  mutate(S_SIDE = case_when(S_SIDE == "L(LEFT)" ~ "L", TRUE ~ S_SIDE))
+#mismatch is ok - this is because we resampled supplementatl (97) sites
+#will just need to make sure I add date or ID to grouping to separate
 
 #join site info to shoals data
 #use base, because tidyverse was erraneously adding rows
@@ -104,6 +103,22 @@ d <- d %>%
 d <- d %>%
   mutate(S_RM_START = rm_start,
          S_RM_END = rm_end)
+
+#this trip had errors with rate being set incorrectly
+#make sure all data before 2021-03-08 22:15:00 is coded as supplemental 97
+#and all data after this datetime is monitoring 96
+d <- d %>%
+  mutate(S_SAMPLE_TYPE = case_when(S_START_DATE_TIME <
+                                     as.POSIXct("2021-03-08 22:15:00") ~ as.integer(97),
+                                   S_START_DATE_TIME >
+                                     as.POSIXct("2021-03-08 22:15:00") ~ as.integer(96)),
+         #a few sites need comments added
+         S_SAMPLE_NOTES = case_when(
+           S_START_DATE_TIME < as.POSIXct("2021-03-08 22:15:00") &
+                                       S_SAMPLE_NOTES == "" ~
+              "rate set incorrectly on CPS, 24 instead of 240, did not shock effectively",
+           TRUE ~ S_SAMPLE_NOTES))
+
 
 #  mutate(S_RM_START = case_when(
  #   #If start RM entered (nonnative sites), keep existing value
@@ -136,12 +151,6 @@ d %>%
   ggplot(aes(x = S_START_DATE_TIME, y = S_RM_START)) +
   geom_point()
 
-d <- d %>% #fix one time error
-  mutate(S_START_DATE_TIME = case_when(
-    S_START_DATE_TIME == as.POSIXct("2020-03-10 11:32:00") ~
-                     as.POSIXct("2020-03-10 22:00:00"),
-                   TRUE ~ S_START_DATE_TIME))
-
 
 # COMBINE EF MINUTES AND SECONDS FOR TOTAL SECONDS
 d <- d %>%
@@ -172,7 +181,10 @@ species.counts <- d %>%
 #these could be real, but likely are computer errors
 
 #fix errors if needed
-
+d <- d %>%   #accidentally coded as GSF, should be RBT
+            #total/fork ratio is rainbow sized, too deep a fork to be brown
+  mutate(SPECIES = case_when(ID == "ID_20210310_0054_31_122_a25595fe" ~ "RBT",
+                              TRUE ~ SPECIES))
 
 #check weights and lengths
 #rainbows
@@ -204,7 +216,6 @@ d %>%
   geom_point()
 
 #others
-#rainbows
 d %>%
   filter(SPECIES %in% c("RBT", "BNT", "NFC") == FALSE) %>%
   ggplot(aes(TOTAL_LENGTH, FORK_LENGTH)) +
@@ -227,12 +238,10 @@ d <- d %>%
 
 #Fix fish errors ############
 d <- d %>%
-  mutate(TOTAL_LENGTH = case_when(ID == "ID_20200312_2132_58_596_bb992dd2" ~ as.integer(423),
-                                  ID == "ID_20200310_2206_22_081_87b62916" ~ as.integer(114),
+  mutate(TOTAL_LENGTH = case_when(ID == "ID_20210310_2156_42_290_213c68ed" ~ as.integer(252),
                                   TRUE ~ TOTAL_LENGTH),
 
-         WEIGHT = case_when(ID == "ID_20200310_2216_45_048_9b94578c" ~ NA_integer_,
-                            ID == "ID_20200310_2221_08_713_8a637530" ~ as.integer(38),
+         WEIGHT = case_when(ID == "ID_20210309_1933_31_541_f853c7c0" ~ NA_integer_,
                             TRUE ~ WEIGHT))
 
 
@@ -258,6 +267,8 @@ d <- d %>%
 #shoals uses strings of numbers and letters, access uses numeric primary keys
 d <- d %>%
   arrange(SAMPLE_ID, S_START_DATE_TIME) %>% #order by sample id and end time
+  #create new field to deal with resampling sites - site id is not unique
+  mutate(S_SITE_ID = paste(S_SITE_ID, S_START_DATE_TIME)) %>%
   #create numeric ids by converting existing id fields to numeric
   mutate(ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID)),
          ACCESS_FISH_ID = row_number())
