@@ -386,8 +386,8 @@ colnames(fish)
 
 
 
-#save to ~/data/raw
+#save to ~/output_data
 write.csv(fish, "./output_data/LF20210308_fish.csv", row.names = FALSE)
 write.csv(site, "./output_data/LF20210308_site.csv", row.names = FALSE)
-write.csv(d, "./output_data/LF202100308_shoals_export_errorchecked.csv", row.names = FALSE)
+write.csv(d, "./output_data/LF20210308_shoals_export_errorchecked.csv", row.names = FALSE)
 

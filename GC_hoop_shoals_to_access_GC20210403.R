@@ -380,6 +380,7 @@ write.csv(fish,
           na = "",
           row.names = FALSE)
 
+write.csv(d, "./output_data/GC20210403_hoop_shoals_export_errorchecked.csv", row.names = FALSE)
 # Access import instructions ######
 # 1. open most recent version of GCMRC_FISH_DATA_ENTRY_TEMPLATE.mdb, click
 #    save as to give it a filename with your trip id
