@@ -1,36 +1,69 @@
-# revised code - as SHOALS was changed
-# and some basic plots for BNT/RBT for trip reports or presentations
-# NOTE: END_DATETIME is incorrect from SHOALS, it is default 2018-01-01 00:01:00
-# but don't really need that for EF data
-#loads data entered directly into field computers (from shoals program),
-#formats it to match database data, and saves as .csv
-#inputs: .txt file with data export from shoals
-#        (no format changes from program output!)
-#outputs: site_shoals.csv
-#         fish_shoals.csv
-#        shoals data formatted to match format of database data
-#        saved in ./data/raw
+# loads data exports from SHOALS program, formats data to match big boy database
+# data, and saves as .csv (ready to import into access data entry template)
+#
+# This script is for Grand Canyon electrofishing data
+#
+# Author: Jan Boyer, AGFD jboyer@azgfd.gov
+# inputs: .txt file (tab delimited) of fish data output from shoals program
+#         created using Files -> Export Data in shoals
+# outputs: 2 .csv files saved in ./output_data
+#   one with site(sample) data: to import to FISH_T_SAMPLE table in access data
+#                               entry template
+#   one with fish(specimen) data: to import to FISH_T_SPECIMEN table in access
+#                                 data entry template
+#
+# Notes:
+# 1. Originally written for AGFD data, may need minor edits (i.e., add columns
+# that your project uses but AGFD projects don't, some projects record PIT and
+# finclip in RECAP_YES_NO, others only record PIT recap info) to work for other
+# agencies or projects
+
 
 library(tidyverse)
-site.list <- read.csv("./site_lists/LF_sites.csv", stringsAsFactors = FALSE)
-site.list <- site.list %>%
-  filter(type == "monitoring") %>%
-  select(S_SITE_ID, side, rm_start, rm_end) %>%
-  distinct()
 
 current.year <- 2021 #define current year
-trip.id <- "LF202100308"
+trip.id <- "GC20210403"
 
-#current.year.directory <- paste(
-#  "\\\\flag-server/Office/Lees Ferry/Database files",
-#  current.year, sep = "/")
+#where input data (.txt file exported from shoals) is stored
+#shoals.data.filepath <-
+# "\\\\FLAG-SERVER/Office/Grand Canyon Downstream/Databases/2019/"
+shoals.data.filepath <- "C:/Users/jboyer/Documents/"
+#name of input file (.txt file exported from shoals)
+shoals.file.name <- paste0(trip.id, "_AGFD_EF_v6_Export.txt")
+#where do you want to save your output data?
+#save.filepath <- "\\\\FLAG-SERVER/Office/Grand Canyon Downstream/Databases/2019/"
+save.filepath <- "./output_data/"
 
-#working at home because COVID, no server access
-current.year.directory <- "./input_data/"
+#enter values for how many samples and fish are already in access database for
+#this trip (from angling and efish).
+#needed to make sure assigned primary keys are unique and do not duplicate keys for
+#electofish data
+n.samples.access <- 175
+n.fish.access <- 1536
 
-file.name <- "LF20210308_AGFD_EF_v6_Export.txt"
+#load site lists
+all.sites <- read_csv("./site_lists/GC_sites.csv")
+all.sites <- all.sites %>%
+  mutate(S_SITE_ID = gsub("_", "", SiteID),
+         start.rm = RiverMile_100ths) %>%
+  select(S_SITE_ID, start.rm, RiverSide, reach, id)
+#add end rivermile to sites
+left <- all.sites %>%
+  filter(RiverSide == "L") %>%
+  arrange(id) %>%
+  mutate(end.rm = lead(start.rm))
+right <- all.sites %>%
+  filter(RiverSide == "R") %>%
+  arrange(id) %>%
+  mutate(end.rm = lead(start.rm))
 
-d <- read.delim(paste(current.year.directory, file.name, sep = "/"),
+all.sites <- bind_rows(left, right)
+
+#load turbidity data
+turbidity <- read.csv("./input_data/GC20210403_turbidity_temperature.csv")
+
+#load shoals data (electrofishing)
+d <- read.delim(paste(shoals.data.filepath, shoals.file.name, sep = "/"),
                 header = TRUE, stringsAsFactors = FALSE) #load shoals data
 colnames(d)
 
@@ -65,7 +98,7 @@ d <- d  %>%
   #format datetime fields as datetime (POSIXct)
   ##mutate_at(vars(ends_with("DATE_TIME")), #mutate all variables ending with...
   #          as.POSIXct, #with this function
-   #         format = "%m/%d/%Y %H:%M") %>% #arguments needed for function
+  #         format = "%m/%d/%Y %H:%M") %>% #arguments needed for function
   mutate(S_START_DATE_TIME = as.POSIXct(S_START_DATE_TIME, format = "%m/%d/%Y %H:%M")) %>%
   mutate_at(vars(ends_with("READER_TIME")),
             as.POSIXct,
@@ -77,69 +110,32 @@ glimpse(d)
 
 length(unique(d$S_SITE_ID))
 unique(d$S_SITE_ID)
-#fix errors with site ID
-d <- d %>%
- mutate(S_SITE_ID = case_when(S_SITE_ID == "--12.55L" ~ "-12.55L",
-                              S_SITE_ID == "-12.05" ~ "-12.05L",
-                              TRUE ~ S_SITE_ID))
 
+#fix errors with site ID if needed
+d <- d %>%
+  mutate(S_SITE_ID = case_when(S_SITE_ID == "218.17R" ~ "218.17L",
+                   S_SITE_ID == "218.80L" ~ "218.8L",
+                   S_SITE_ID == "275.8L" ~ "275.80L",
+                   S_SITE_ID == "277.8L" ~ "277.80L",
+                   S_SITE_ID == "279.6R" ~ "279.60R",
+                   TRUE ~ as.character(S_SITE_ID)))
 
 sites.sampled = d %>%
   select(S_SITE_ID, S_START_DATE_TIME)%>%
   unique()
 
+#check that these numbers match
 length(unique(d$S_SITE_ID))
 length(unique(d$SAMPLE_ID))
-#mismatch is ok - this is because we resampled supplementatl (97) sites
-#will just need to make sure I add date or ID to grouping to separate
 
 #join site info to shoals data
-#use base, because tidyverse was erraneously adding rows
 d <- d %>%
-  left_join(site.list)
-
+  left_join(all.sites)
 
 #assign start/end RM and side
 d <- d %>%
-  mutate(S_RM_START = rm_start,
-         S_RM_END = rm_end)
-
-#this trip had errors with rate being set incorrectly
-#make sure all data before 2021-03-08 22:15:00 is coded as supplemental 97
-#and all data after this datetime is monitoring 96
-d <- d %>%
-  mutate(S_SAMPLE_TYPE = case_when(S_START_DATE_TIME <
-                                     as.POSIXct("2021-03-08 22:15:00") ~ as.integer(97),
-                                   S_START_DATE_TIME >
-                                     as.POSIXct("2021-03-08 22:15:00") ~ as.integer(96)),
-         #a few sites need comments added
-         S_SAMPLE_NOTES = case_when(
-           S_START_DATE_TIME < as.POSIXct("2021-03-08 22:15:00") &
-                                       S_SAMPLE_NOTES == "" ~
-              "rate set incorrectly on CPS, 24 instead of 240, did not shock effectively",
-           TRUE ~ S_SAMPLE_NOTES))
-
-
-d <- d %>%
-  mutate(S_RM_START = case_when(
-    #If start RM entered (nonnative sites), keep existing value
-    !is.na(S_RM_START) ~ S_RM_START,
-    #For monitoring sites, start RM from joined site table
-    !is.na(rm_start) ~ rm_start,
-   # RM often not recorded for slough. If missing for slough sites, add RM
-    #useful to have RM for mapping locations of nonnatives, do not want
-    # to leave blank(this RM is a center point of slough)
-    is.na(S_RM_START) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
-    S_RM_END = case_when( #do the same for end RM
-      !is.na(S_RM_END) ~ S_RM_END,
-      !is.na(rm_end) ~ rm_end,
-      is.na(S_RM_END) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ -12.15),
-    S_SIDE = case_when( #do the same for end RM
-      !is.na(S_SIDE) & S_SIDE != "" ~ S_SIDE,
-      !is.na(side) & side != "" ~ side,
-      is.na(S_SIDE) & grepl("SLOUGH", S_SITE_ID, fixed = TRUE) ~ "L")) %>%
-  select(-c(rm_start, rm_end, side)) #no longer needed, remove
-
+  mutate(S_RM_START = start.rm,
+         S_RM_END = end.rm)
 
 #check for date/datetime or river mile errors
 #on this graph, samples should progress downstream and onward in time in a
@@ -152,7 +148,6 @@ d %>%
   ggplot(aes(x = S_START_DATE_TIME, y = S_RM_START)) +
   geom_point()
 
-
 # COMBINE EF MINUTES AND SECONDS FOR TOTAL SECONDS
 d <- d %>%
   mutate(EF_TOTAL_SECONDS = S_EF_MINUTES*60 + S_EF_SECONDS) %>%
@@ -161,6 +156,9 @@ d <- d %>%
 #crew - standardize format: boatmen first, commas in between
 unique(d$S_CREW)
 
+d <- d %>%
+  mutate(S_CREW = case_when(S_CREW == "AN,CH,JB,SW" ~ "AN, CH",
+                            TRUE ~ S_CREW))
 
 #format and fix fish data #################
 
@@ -178,74 +176,22 @@ d$FINCLIP1_RECAP <- ifelse(d$RECAP_YES_NO == "FY" | d$RECAP_YES_NO == "BY", "Y",
 species.counts <- d %>%
   group_by(S_SAMPLE_TYPE, SPECIES) %>%
   summarize(n = n())
-#look especially for unusual fish (GSF, FHM) caught at montioring sites (96)
+#look especially for unusual fish (GSF, FHM)
 #these could be real, but likely are computer errors
 
-#fix errors if needed
-d <- d %>%   #accidentally coded as GSF, should be RBT
-            #total/fork ratio is rainbow sized, too deep a fork to be brown
-  mutate(SPECIES = case_when(ID == "ID_20210310_0054_31_122_a25595fe" ~ "RBT",
-                              TRUE ~ SPECIES))
 
-#check weights and lengths
-#rainbows
+#check weights and lengths - outliers are likely data entry errors
 d %>%
-  filter(SPECIES == "RBT") %>%
   ggplot(aes(TOTAL_LENGTH, FORK_LENGTH)) +
   geom_point()
 d %>%
-  filter(SPECIES == "RBT") %>%
   ggplot(aes(TOTAL_LENGTH, WEIGHT)) +
   geom_point()
 d %>%
-  filter(SPECIES == "RBT") %>%
   ggplot(aes(FORK_LENGTH, WEIGHT)) +
   geom_point()
-
-#browns
-d %>%
-  filter(SPECIES == "BNT") %>%
-  ggplot(aes(TOTAL_LENGTH, FORK_LENGTH)) +
-  geom_point()
-d %>%
-  filter(SPECIES == "BNT") %>%
-  ggplot(aes(TOTAL_LENGTH, WEIGHT)) +
-  geom_point()
-d %>%
-  filter(SPECIES == "BNT") %>%
-  ggplot(aes(FORK_LENGTH, WEIGHT)) +
-  geom_point()
-
-#others
-d %>%
-  filter(SPECIES %in% c("RBT", "BNT", "NFC") == FALSE) %>%
-  ggplot(aes(TOTAL_LENGTH, FORK_LENGTH)) +
-  geom_point() +
-  facet_wrap(vars(SPECIES))
-d %>%
-  filter(SPECIES %in% c("RBT", "BNT", "NFC") == FALSE) %>%
-  ggplot(aes(TOTAL_LENGTH, WEIGHT)) +
-  geom_point()+
-  facet_wrap(vars(SPECIES))
-d %>%
-  filter(SPECIES %in% c("RBT", "BNT", "NFC") == FALSE) %>%
-  ggplot(aes(FORK_LENGTH, WEIGHT)) +
-  geom_point()+
-  facet_wrap(vars(SPECIES))
-
-d <- d %>%
-  mutate(total_minus_fork = TOTAL_LENGTH - FORK_LENGTH)
-
 
 #Fix fish errors ############
-d <- d %>%
-  mutate(TOTAL_LENGTH = case_when(ID == "ID_20210310_2156_42_290_213c68ed" ~ as.integer(252),
-                                  TRUE ~ TOTAL_LENGTH),
-         WEIGHT = case_when(ID == "ID_20210309_1933_31_541_f853c7c0" ~ NA_integer_,
-                            TRUE ~ WEIGHT),
-         SPECIES = case_when(ID == "ID_20210309_2247_07_992_1fc77982" ~ "BNT",
-                             TRUE ~ SPECIES))
-
 
 
 #CHECK for duplicate tag entries (i.e., new fish measured before previous fish
@@ -260,7 +206,7 @@ dup.tags <- d %>%
 d <- d %>%
   #cannot have ripe fish of unknown sex - ripe must be error if sex = U
   mutate(SEX_COND = case_when(SEX == "U" & SEX_COND == "R" ~ "N",
-  #also G (gravid?) occasionally recorded for unknown fish?!
+                              #also G (gravid?) occasionally recorded for unknown fish?!
                               SEX == "U" & SEX_COND == "G" ~ "N",
                               TRUE ~ SEX_COND))
 
@@ -273,7 +219,9 @@ d <- d %>%
   mutate(S_SITE_ID_2 = paste(S_SITE_ID, S_START_DATE_TIME)) %>%
   #create numeric ids by converting existing id fields to numeric
   mutate(ACCESS_SAMPLE_ID = as.numeric(factor(S_SITE_ID_2)),
-         ACCESS_FISH_ID = row_number())
+         ACCESS_FISH_ID = row_number()) %>%
+  mutate(ACCESS_SAMPLE_ID = ACCESS_SAMPLE_ID + n.samples.access,
+         ACCESS_FISH_ID = ACCESS_FISH_ID + n.fish.access)
 
 #look at your sample size - makes sense?
 max(d$ACCESS_FISH_ID)
@@ -314,7 +262,7 @@ site <- d %>%
             START_DATETIME = S_START_DATE_TIME,
             END_DATETIME = END_DATETIME,
             RIVER_CODE = "COR",
-            SIDE_CODE = S_SIDE,
+            SIDE_CODE = RiverSide,
             START_RM = S_RM_START,
             END_RM = S_RM_END,
             STATION_ID = paste0("S", S_SITE_ID),
@@ -337,14 +285,21 @@ site <- d %>%
   #ok to keep NAs in numeric fields, access interprets correctly for numeric
   replace_na(list(SAMPLE_NOTES = ""))
 
+#join on turbidity data
+#subset turbidity to needed data
+turbidity <- turbidity %>%
+  select(START_DATE, TURBIDITY_NTU, WATER_TEMP)
+
+site <- site %>%
+  left_join(turbidity)
 
 # Make dates the frustrating, nonstandard microsoft format
 # why don't you use ISO 8601 date standards, Microsoft?!
 site <- site %>%
   mutate(START_DATETIME = as.character(format(as.POSIXct(START_DATETIME),
-                                          "%m/%d/%Y %H:%M:%S")),
-         END_DATETIME = as.character(format(as.POSIXct(END_DATETIME),
                                               "%m/%d/%Y %H:%M:%S")),
+         END_DATETIME = as.character(format(as.POSIXct(END_DATETIME),
+                                            "%m/%d/%Y %H:%M:%S")),
          START_DATE = as.character(format(as.Date(START_DATE), "%m/%d/%Y")),
          END_DATE = as.character(format(as.Date(END_DATE), "%m/%d/%Y")))
 
@@ -384,10 +339,29 @@ fish <- d %>%
 colnames(site)
 colnames(fish)
 
+# save files ######
+write.csv(site,
+          file = paste0(save.filepath, trip.id, "_sample_for_access.csv"),
+          na = "", #save NA values as blanks
+          row.names = FALSE)
 
+write.csv(fish,
+          file = paste0(save.filepath, trip.id, "_specimen_for_access.csv"),
+          na = "",
+          row.names = FALSE)
 
-#save to ~/output_data
-write.csv(fish, "./output_data/LF20210308_fish.csv", row.names = FALSE)
-write.csv(site, "./output_data/LF20210308_site.csv", row.names = FALSE)
-write.csv(d, "./output_data/LF20210308_shoals_export_errorchecked.csv", row.names = FALSE)
-
+# Access import instructions ######
+# 1. open most recent version of GCMRC_FISH_DATA_ENTRY_TEMPLATE.mdb, click
+#    save as to give it a filename with your trip id
+# 2. Import Sample data to FISH_T_SAMPLE table
+#    2a. Click external data tab
+#    2b. Click Import Text file button. Access will open a window to guide you
+#        through the import
+#    2c. On the first screen, use the browse button to locate the file to import
+#        (GC20191024_sample_for_access.csv or similar), and choose "Append a
+#        copy of the records to the table: FISH_T_SAMPLE"
+#    2d. choose delimited on the second screen
+#    2e. choose comma when asked what delimiter separates your data, and check
+#        the "First Row Contains Field Names" box
+# 3. Repeat step 2 with specimen data, appending your specimen file to the
+#    FISH_T_SPECIMEN table

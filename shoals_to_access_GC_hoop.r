@@ -1,21 +1,23 @@
-# cleans and edits shoals data output, formats into same format used by access
-# data entry templates so that shoals data can be imported into access
-# Also useful for getting shoals data into a format that can be merged/joined
-# onto big boy downloads, if shoals data from recent trip is not yet in big boy
-
+# loads data exports from SHOALS program, formats data to match big boy database
+# data, and saves as .csv (ready to import into access data entry template)
+#
+# This script is for Grand Canyon hoop net data
+#
 # Author: Jan Boyer, AGFD jboyer@azgfd.gov
 # inputs: .txt file (tab delimited) of fish data output from shoals program
-#         using Files -> Export Data in shoals
-# outputs: 2 .csv files:
+#         created using Files -> Export Data in shoals
+# outputs: 2 .csv files saved in ./output_data
 #   one with site(sample) data: to import to FISH_T_SAMPLE table in access data
 #                               entry template
 #   one with fish(specimen) data: to import to FISH_T_SPECIMEN table in access
 #                                 data entry template
-
-# Note:Originally written for AGFD data, may need minor edits (i.e., add columns
+#
+# Notes:
+# 1. Originally written for AGFD data, may need minor edits (i.e., add columns
 # that your project uses but AGFD projects don't, some projects record PIT and
 # finclip in RECAP_YES_NO, others only record PIT recap info) to work for other
 # agencies or projects
+
 
 library(tidyverse)
 
